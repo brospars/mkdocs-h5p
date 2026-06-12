@@ -4,7 +4,9 @@ Embed H5P packages in MkDocs Markdown using
 [tunapanda/h5p-standalone](https://github.com/tunapanda/h5p-standalone).
 
 The plugin extracts each referenced `.h5p` file during `mkdocs build` and
-injects the standalone H5P player into the generated page.
+injects the standalone H5P player into the generated page by default. It can
+also render each H5P package through a generated standalone HTML file embedded
+with an iframe.
 
 ## Installation
 
@@ -44,6 +46,7 @@ plugins:
   - h5p:
       h5p_dir: assets/h5p
       player_url: https://cdn.jsdelivr.net/npm/h5p-standalone@3.8.0/dist
+      render_mode: inline
       frame: true
       full_screen: true
       export: false
@@ -57,6 +60,11 @@ plugins:
 uses jsDelivr with version `3.8.0` pinned. For offline sites, download the
 `h5p-standalone` `dist` files into your MkDocs docs folder and set `player_url`
 to that local URL.
+
+`render_mode` can be `inline` or `iframe`. The default, `inline`, adds the H5P
+div and `h5p-standalone` scripts to the generated MkDocs page. `iframe` creates
+`mkdocs-h5p.html` inside the extracted package directory under `h5p_dir` and
+embeds that file in the generated page.
 
 ## Notes
 

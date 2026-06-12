@@ -28,6 +28,7 @@ SAFE_ID_PATTERN = re.compile(r"[^a-zA-Z0-9_-]+")
 class H5PAsset:
     source: Path
     output_name: str
+    player_file: str = "mkdocs-h5p.html"
 
 
 class H5PPlugin(BasePlugin):
@@ -41,6 +42,7 @@ class H5PPlugin(BasePlugin):
                 default="https://cdn.jsdelivr.net/npm/h5p-standalone@3.8.0/dist",
             ),
         ),
+        ("render_mode", config_options.Choice(("inline", "iframe"), default="inline")),
         ("frame", config_options.Type(bool, default=True)),
         ("full_screen", config_options.Type(bool, default=True)),
         ("export", config_options.Type(bool, default=False)),
@@ -81,7 +83,7 @@ class H5PPlugin(BasePlugin):
         if not players:
             return markdown
 
-        return f"{markdown}\n\n{self._render_loader(players, page)}"
+        return f"{markdown}\n\n{self._render_inline_loader(players, page)}"
 
     def _render_player(
         self,
@@ -92,25 +94,77 @@ class H5PPlugin(BasePlugin):
     ) -> str:
         source = self._resolve_h5p_path(raw_path, page)
         asset = self._extract_h5p(source)
-        h5p_json_path = self._page_relative_url(page, self._asset_url(asset.output_name))
-        player_id = self._player_id(source)
         label = html.escape(title or source.stem)
 
+        if self.config["render_mode"] == "inline":
+            return self._render_inline_player(asset, page, label, players)
+        return self._render_iframe_player(asset, page, label)
+
+    def _render_inline_player(
+        self,
+        asset: H5PAsset,
+        page: Page,
+        label: str,
+        players: list[dict[str, Any]],
+    ) -> str:
+        player_id = self._player_id(asset.source)
+        options = self._player_options(
+            player_id=player_id,
+            h5p_json_path=self._page_relative_url(page, self._asset_url(asset.output_name)),
+            source_url=page.url,
+        )
+        players.append({"id": player_id, "options": options})
+        return f'<div id="{player_id}" class="mkdocs-h5p" aria-label="{label}"></div>'
+
+    def _render_iframe_player(self, asset: H5PAsset, page: Page, label: str) -> str:
+        self._write_standalone_player(asset)
+        iframe_src = self._page_relative_url(page, self._standalone_asset_url(asset))
+        fullscreen = " allowfullscreen" if self.config["full_screen"] else ""
+        return (
+            f'<iframe class="mkdocs-h5p" src="{html.escape(iframe_src)}" '
+            f'title="{label}" loading="lazy" style="width:100%;height:600px;border:0;"'
+            f"{fullscreen}></iframe>"
+        )
+
+    def _write_standalone_player(self, asset: H5PAsset) -> None:
+        player_id = "mkdocs-h5p-player"
+        standalone_url = self._standalone_asset_url(asset)
+        options = self._player_options(
+            player_id=player_id,
+            h5p_json_path=".",
+            source_url=standalone_url,
+        )
+
+        destination = self.site_dir / self.config["h5p_dir"] / asset.output_name / asset.player_file
+        destination.write_text(
+            self._render_standalone_html(
+                player_id=player_id,
+                main_bundle=self._relative_url(standalone_url, self._player_asset_url("main.bundle.js")),
+                options=options,
+            ),
+            encoding="utf-8",
+        )
+
+    def _player_options(
+        self,
+        *,
+        player_id: str,
+        h5p_json_path: str,
+        source_url: str,
+    ) -> dict[str, Any]:
         options = {
             **self.config["player_options"],
             "id": player_id,
             "h5pJsonPath": h5p_json_path,
-            "frameJs": self._page_relative_url(page, self._player_asset_url("frame.bundle.js")),
-            "frameCss": self._page_relative_url(page, self._player_asset_url("styles/h5p.css")),
+            "frameJs": self._relative_url(source_url, self._player_asset_url("frame.bundle.js")),
+            "frameCss": self._relative_url(source_url, self._player_asset_url("styles/h5p.css")),
             "frame": self.config["frame"],
             "fullScreen": self.config["full_screen"],
             "export": self.config["export"],
             "embed": self.config["embed"],
             "copyright": self.config["copyright"],
         }
-
-        players.append({"id": player_id, "options": options})
-        return f'<div id="{player_id}" class="mkdocs-h5p" aria-label="{label}"></div>'
+        return options
 
     def _resolve_h5p_path(self, raw_path: str, page: Page) -> Path:
         raw_path = raw_path.split("#", 1)[0].split("?", 1)[0]
@@ -153,7 +207,7 @@ class H5PPlugin(BasePlugin):
 
         return H5PAsset(source=source, output_name=output_name)
 
-    def _render_loader(self, players: list[dict[str, Any]], page: Page) -> str:
+    def _render_inline_loader(self, players: list[dict[str, Any]], page: Page) -> str:
         main_bundle = self._page_relative_url(page, self._player_asset_url("main.bundle.js"))
         payload = json.dumps(players, separators=(",", ":")).replace("</", "<\\/")
         return (
@@ -161,8 +215,8 @@ class H5PPlugin(BasePlugin):
             "<script>\n"
             "(function(){\n"
             f"  var players = {payload};\n"
-            "  var H5P = window.H5PStandalone && window.H5PStandalone.H5P;\n"
             "  function init(){\n"
+            "    var H5P = window.H5PStandalone && window.H5PStandalone.H5P;\n"
             "    if (!H5P) {\n"
             "      console.error('mkdocs-h5p: h5p-standalone failed to load');\n"
             "      return;\n"
@@ -186,16 +240,67 @@ class H5PPlugin(BasePlugin):
             "</script>"
         )
 
+    def _render_standalone_html(
+        self,
+        *,
+        player_id: str,
+        main_bundle: str,
+        options: dict[str, Any],
+    ) -> str:
+        payload = json.dumps(options, separators=(",", ":")).replace("</", "<\\/")
+        return (
+            "<!doctype html>\n"
+            '<html lang="en">\n'
+            "<head>\n"
+            '  <meta charset="utf-8">\n'
+            '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
+            "</head>\n"
+            "<body>\n"
+            f'  <div id="{html.escape(player_id)}" class="mkdocs-h5p"></div>\n'
+            f'  <script src="{html.escape(main_bundle)}" charset="UTF-8"></script>\n'
+            "  <script>\n"
+            "  (function(){\n"
+            f"    var options = {payload};\n"
+            "    function init(){\n"
+            "      var H5P = window.H5PStandalone && window.H5PStandalone.H5P;\n"
+            "      if (!H5P) {\n"
+            "        console.error('mkdocs-h5p: h5p-standalone failed to load');\n"
+            "        return;\n"
+            "      }\n"
+            "      var element = document.getElementById(options.id);\n"
+            "      if (!element) return;\n"
+            "      try {\n"
+            "        Promise.resolve(new H5P(element, options)).catch(function(error){\n"
+            "          console.error('mkdocs-h5p: failed to initialize H5P player', options.id, error);\n"
+            "        });\n"
+            "      } catch (error) {\n"
+            "        console.error('mkdocs-h5p: failed to initialize H5P player', options.id, error);\n"
+            "      }\n"
+            "    }\n"
+            "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);\n"
+            "    else init();\n"
+            "  }());\n"
+            "  </script>\n"
+            "</body>\n"
+            "</html>\n"
+        )
+
     def _asset_url(self, output_name: str) -> str:
         return _join_url(self.config["h5p_dir"], output_name)
+
+    def _standalone_asset_url(self, asset: H5PAsset) -> str:
+        return _join_url(self._asset_url(asset.output_name), asset.player_file)
 
     def _player_asset_url(self, filename: str) -> str:
         return _join_url(self.config["player_url"], filename)
 
     def _page_relative_url(self, page: Page, target: str) -> str:
+        return self._relative_url(page.url, target)
+
+    def _relative_url(self, source_url: str, target: str) -> str:
         if _is_absolute_url(target) or target.startswith("/"):
             return target
-        return get_relative_url(target, page.url)
+        return get_relative_url(target, source_url)
 
     def _player_id(self, source: Path) -> str:
         self._page_counter += 1
