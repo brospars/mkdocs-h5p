@@ -30,6 +30,10 @@ class H5PAsset:
     output_name: str
     player_file: str = "mkdocs-h5p.html"
 
+    @property
+    def download_file(self) -> str:
+        return f"{self.output_name}.h5p"
+
 
 class H5PPlugin(BasePlugin):
     config_scheme = (
@@ -111,6 +115,7 @@ class H5PPlugin(BasePlugin):
         options = self._player_options(
             player_id=player_id,
             h5p_json_path=self._page_relative_url(page, self._asset_url(asset.output_name)),
+            output_name=asset.output_name,
             source_url=page.url,
         )
         players.append({"id": player_id, "options": options})
@@ -132,6 +137,7 @@ class H5PPlugin(BasePlugin):
         options = self._player_options(
             player_id=player_id,
             h5p_json_path=".",
+            output_name=asset.output_name,
             source_url=standalone_url,
         )
 
@@ -150,12 +156,14 @@ class H5PPlugin(BasePlugin):
         *,
         player_id: str,
         h5p_json_path: str,
+        output_name: str,
         source_url: str,
     ) -> dict[str, Any]:
         options = {
             **self.config["player_options"],
             "id": player_id,
             "h5pJsonPath": h5p_json_path,
+            "downloadUrl": self._relative_url(source_url, self._download_asset_url(output_name)),
             "frameJs": self._relative_url(source_url, self._player_asset_url("frame.bundle.js")),
             "frameCss": self._relative_url(source_url, self._player_asset_url("styles/h5p.css")),
             "frame": self.config["frame"],
@@ -205,7 +213,9 @@ class H5PPlugin(BasePlugin):
                     with archive.open(member) as src, target.open("wb") as dst:
                         shutil.copyfileobj(src, dst)
 
-        return H5PAsset(source=source, output_name=output_name)
+        asset = H5PAsset(source=source, output_name=output_name)
+        shutil.copyfile(source, destination / asset.download_file)
+        return asset
 
     def _render_inline_loader(self, players: list[dict[str, Any]], page: Page) -> str:
         main_bundle = self._page_relative_url(page, self._player_asset_url("main.bundle.js"))
@@ -287,6 +297,9 @@ class H5PPlugin(BasePlugin):
 
     def _asset_url(self, output_name: str) -> str:
         return _join_url(self.config["h5p_dir"], output_name)
+
+    def _download_asset_url(self, output_name: str) -> str:
+        return _join_url(self._asset_url(output_name), f"{output_name}.h5p")
 
     def _standalone_asset_url(self, asset: H5PAsset) -> str:
         return _join_url(self._asset_url(asset.output_name), asset.player_file)

@@ -66,6 +66,10 @@ div and `h5p-standalone` scripts to the generated MkDocs page. `iframe` creates
 `mkdocs-h5p.html` inside the extracted package directory under `h5p_dir` and
 embeds that file in the generated page.
 
+The original `.h5p` package is also copied into the generated site and exposed
+to `h5p-standalone` through `downloadUrl`, so enabling `export: true` can provide
+a working download button.
+
 ## Notes
 
 Some H5P exports do not include every required library. The standalone player

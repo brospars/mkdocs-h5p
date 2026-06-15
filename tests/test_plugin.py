@@ -35,6 +35,10 @@ def generated_player_files(tmp_path: Path) -> list[Path]:
     return sorted((tmp_path / "site" / "assets" / "h5p").glob("*/mkdocs-h5p.html"))
 
 
+def generated_download_files(tmp_path: Path) -> list[Path]:
+    return sorted((tmp_path / "site" / "assets" / "h5p").glob("*/*.h5p"))
+
+
 def test_replaces_image_h5p_reference_inline_by_default(tmp_path: Path) -> None:
     docs = tmp_path / "docs"
     page_dir = docs / "guide"
@@ -55,10 +59,13 @@ def test_replaces_image_h5p_reference_inline_by_default(tmp_path: Path) -> None:
     assert 'class="mkdocs-h5p"' in output
     assert "assets/h5p/quiz-" in output
     assert '"h5pJsonPath"' in output
+    assert '"downloadUrl"' in output
     assert "h5p-standalone@3.8.0/dist/main.bundle.js" in output
     assert '<iframe class="mkdocs-h5p"' not in output
     assert (tmp_path / "site" / "assets" / "h5p").is_dir()
     assert generated_player_files(tmp_path) == []
+    assert len(generated_download_files(tmp_path)) == 1
+    assert generated_download_files(tmp_path)[0].read_bytes() == (page_dir / "quiz.h5p").read_bytes()
 
 
 def test_replaces_shortcode_reference(tmp_path: Path) -> None:
@@ -107,9 +114,11 @@ def test_supports_multiple_h5p_files_on_one_page(tmp_path: Path) -> None:
 
     assert output.count('class="mkdocs-h5p"') == 2
     assert output.count('"h5pJsonPath"') == 2
+    assert output.count('"downloadUrl"') == 2
     assert output.count('"options":{"id":"mkdocs-h5p-') == 2
     assert "for (var index = 0; index < players.length; index += 1)" in output
     assert generated_player_files(tmp_path) == []
+    assert len(generated_download_files(tmp_path)) == 2
 
 
 def test_can_render_h5p_reference_as_iframe(tmp_path: Path) -> None:
@@ -139,7 +148,11 @@ def test_can_render_h5p_reference_as_iframe(tmp_path: Path) -> None:
     assert '<div id="mkdocs-h5p-player" class="mkdocs-h5p"></div>' in player_html
     assert "h5p-standalone@3.8.0/dist/main.bundle.js" in player_html
     assert '"h5pJsonPath":"."' in player_html
+    assert '"downloadUrl":"' in player_html
+    assert ".h5p" in player_html
     assert "new H5P(element, options)" in player_html
+    assert len(generated_download_files(tmp_path)) == 1
+    assert generated_download_files(tmp_path)[0].read_bytes() == (page_dir / "quiz.h5p").read_bytes()
 
 
 def test_rejects_unsafe_archive_paths(tmp_path: Path) -> None:
