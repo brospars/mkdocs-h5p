@@ -70,6 +70,11 @@ The original `.h5p` package is also copied into the generated site and exposed
 to `h5p-standalone` through `downloadUrl`, so enabling `export: true` can provide
 a working download button.
 
+When `embed: true` is enabled, the plugin also provides `embedCode` to
+`h5p-standalone`. The generated embed code is an iframe that points to the
+standalone `mkdocs-h5p.html` file for that activity. Set MkDocs `site_url` to
+make the embed iframe use a full absolute URL.
+
 ## Notes
 
 Some H5P exports do not include every required library. The standalone player

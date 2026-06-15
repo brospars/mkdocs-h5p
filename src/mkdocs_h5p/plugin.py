@@ -58,6 +58,7 @@ class H5PPlugin(BasePlugin):
     def on_config(self, config: dict[str, Any]) -> dict[str, Any]:
         self.docs_dir = Path(config["docs_dir"]).resolve()
         self.site_dir = Path(config["site_dir"]).resolve()
+        self.site_url = config.get("site_url") or ""
         self._page_counter = 0
         return config
 
@@ -112,10 +113,12 @@ class H5PPlugin(BasePlugin):
         players: list[dict[str, Any]],
     ) -> str:
         player_id = self._player_id(asset.source)
+        if self.config["embed"]:
+            self._write_standalone_player(asset)
         options = self._player_options(
             player_id=player_id,
             h5p_json_path=self._page_relative_url(page, self._asset_url(asset.output_name)),
-            output_name=asset.output_name,
+            asset=asset,
             source_url=page.url,
         )
         players.append({"id": player_id, "options": options})
@@ -137,7 +140,7 @@ class H5PPlugin(BasePlugin):
         options = self._player_options(
             player_id=player_id,
             h5p_json_path=".",
-            output_name=asset.output_name,
+            asset=asset,
             source_url=standalone_url,
         )
 
@@ -156,14 +159,14 @@ class H5PPlugin(BasePlugin):
         *,
         player_id: str,
         h5p_json_path: str,
-        output_name: str,
+        asset: H5PAsset,
         source_url: str,
     ) -> dict[str, Any]:
         options = {
             **self.config["player_options"],
             "id": player_id,
             "h5pJsonPath": h5p_json_path,
-            "downloadUrl": self._relative_url(source_url, self._download_asset_url(output_name)),
+            "downloadUrl": self._relative_url(source_url, self._download_asset_url(asset)),
             "frameJs": self._relative_url(source_url, self._player_asset_url("frame.bundle.js")),
             "frameCss": self._relative_url(source_url, self._player_asset_url("styles/h5p.css")),
             "frame": self.config["frame"],
@@ -172,6 +175,8 @@ class H5PPlugin(BasePlugin):
             "embed": self.config["embed"],
             "copyright": self.config["copyright"],
         }
+        if self.config["embed"]:
+            options["embedCode"] = self._embed_code(self._absolute_site_url(self._standalone_asset_url(asset)))
         return options
 
     def _resolve_h5p_path(self, raw_path: str, page: Page) -> Path:
@@ -298,11 +303,18 @@ class H5PPlugin(BasePlugin):
     def _asset_url(self, output_name: str) -> str:
         return _join_url(self.config["h5p_dir"], output_name)
 
-    def _download_asset_url(self, output_name: str) -> str:
-        return _join_url(self._asset_url(output_name), f"{output_name}.h5p")
+    def _download_asset_url(self, asset: H5PAsset) -> str:
+        return _join_url(self._asset_url(asset.output_name), asset.download_file)
 
     def _standalone_asset_url(self, asset: H5PAsset) -> str:
         return _join_url(self._asset_url(asset.output_name), asset.player_file)
+
+    def _embed_code(self, standalone_url: str) -> str:
+        fullscreen = " allowfullscreen" if self.config["full_screen"] else ""
+        return (
+            f'<iframe src="{html.escape(standalone_url, quote=True)}" '
+            f'width="100%" height="600" frameborder="0"{fullscreen}></iframe>'
+        )
 
     def _player_asset_url(self, filename: str) -> str:
         return _join_url(self.config["player_url"], filename)
@@ -314,6 +326,13 @@ class H5PPlugin(BasePlugin):
         if _is_absolute_url(target) or target.startswith("/"):
             return target
         return get_relative_url(target, source_url)
+
+    def _absolute_site_url(self, target: str) -> str:
+        if _is_absolute_url(target):
+            return target
+        if not self.site_url:
+            return target
+        return _join_url(self.site_url, target)
 
     def _player_id(self, source: Path) -> str:
         self._page_counter += 1

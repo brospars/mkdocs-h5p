@@ -24,10 +24,20 @@ def make_page(markdown_file: Path) -> SimpleNamespace:
     )
 
 
-def configured_plugin(tmp_path: Path, options: dict[str, object] | None = None) -> H5PPlugin:
+def configured_plugin(
+    tmp_path: Path,
+    options: dict[str, object] | None = None,
+    site_url: str = "",
+) -> H5PPlugin:
     plugin = H5PPlugin()
     plugin.load_config(options or {})
-    plugin.on_config({"docs_dir": str(tmp_path / "docs"), "site_dir": str(tmp_path / "site")})
+    plugin.on_config(
+        {
+            "docs_dir": str(tmp_path / "docs"),
+            "site_dir": str(tmp_path / "site"),
+            "site_url": site_url,
+        }
+    )
     return plugin
 
 
@@ -153,6 +163,66 @@ def test_can_render_h5p_reference_as_iframe(tmp_path: Path) -> None:
     assert "new H5P(element, options)" in player_html
     assert len(generated_download_files(tmp_path)) == 1
     assert generated_download_files(tmp_path)[0].read_bytes() == (page_dir / "quiz.h5p").read_bytes()
+
+
+def test_embed_code_uses_standalone_player_in_inline_mode(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    page_dir = docs / "guide"
+    page_dir.mkdir(parents=True)
+    markdown_file = page_dir / "index.md"
+    markdown_file.write_text("![h5p](quiz.h5p)", encoding="utf-8")
+    make_h5p(page_dir / "quiz.h5p")
+
+    plugin = configured_plugin(tmp_path, {"embed": True}, site_url="https://example.com/docs/")
+    output = plugin.on_page_markdown(
+        markdown_file.read_text(encoding="utf-8"),
+        page=make_page(markdown_file),
+        config={},
+        files=None,
+    )
+
+    assert '<div id="mkdocs-h5p-' in output
+    assert '"embed":true' in output
+    assert '"embedCode":"' in output
+    assert "https://example.com/docs/assets/h5p/quiz-" in output
+    assert "mkdocs-h5p.html" in output
+
+    player_file = generated_player_files(tmp_path)[0]
+    player_html = player_file.read_text(encoding="utf-8")
+    assert '<div id="mkdocs-h5p-player" class="mkdocs-h5p"></div>' in player_html
+    assert '"embedCode":"' in player_html
+    assert "https://example.com/docs/assets/h5p/quiz-" in player_html
+    assert "mkdocs-h5p.html" in player_html
+
+
+def test_embed_code_uses_standalone_player_in_iframe_mode(tmp_path: Path) -> None:
+    docs = tmp_path / "docs"
+    page_dir = docs / "guide"
+    page_dir.mkdir(parents=True)
+    markdown_file = page_dir / "index.md"
+    markdown_file.write_text("![h5p](quiz.h5p)", encoding="utf-8")
+    make_h5p(page_dir / "quiz.h5p")
+
+    plugin = configured_plugin(
+        tmp_path,
+        {"render_mode": "iframe", "embed": True},
+        site_url="https://example.com/docs/",
+    )
+    output = plugin.on_page_markdown(
+        markdown_file.read_text(encoding="utf-8"),
+        page=make_page(markdown_file),
+        config={},
+        files=None,
+    )
+
+    assert '<iframe class="mkdocs-h5p"' in output
+
+    player_file = generated_player_files(tmp_path)[0]
+    player_html = player_file.read_text(encoding="utf-8")
+    assert '"embed":true' in player_html
+    assert '"embedCode":"' in player_html
+    assert "https://example.com/docs/assets/h5p/quiz-" in player_html
+    assert "mkdocs-h5p.html" in player_html
 
 
 def test_rejects_unsafe_archive_paths(tmp_path: Path) -> None:
