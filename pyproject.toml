@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "mkdocs-h5p"
-version = "0.2.0"
+version = "0.3.0"
 description = "MkDocs plugin for embedding H5P files in Markdown using h5p-standalone."
 readme = "README.md"
 requires-python = ">=3.9"
