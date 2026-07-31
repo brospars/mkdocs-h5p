@@ -75,6 +75,26 @@ When `embed: true` is enabled, the plugin also provides `embedCode` to
 standalone `mkdocs-h5p.html` file for that activity. Set MkDocs `site_url` to
 make the embed iframe use a full absolute URL.
 
+## Automatic Iframe Resizing
+
+The standalone `mkdocs-h5p.html` player page (used by `render_mode: iframe`
+and by the `embedCode` snippet) watches its own content height with a
+`ResizeObserver` and posts a message to its parent window whenever it
+changes:
+
+```js
+window.parent.postMessage({ type: 'iframeResize', height: <content height> }, '*')
+```
+
+When `render_mode: iframe` is used, the generated MkDocs page automatically
+listens for this message and resizes the matching `<iframe class="mkdocs-h5p">`
+to fit its content, so the fixed `height:600px` default is only used until the
+first resize message arrives.
+
+If you embed the `embedCode` iframe on a different website, that site needs
+its own listener for `{ type: 'iframeResize', height }` messages to resize the
+iframe — the plugin only controls the listener on pages it generates.
+
 ## Notes
 
 Some H5P exports do not include every required library. The standalone player
@@ -94,18 +114,6 @@ Build the source distribution and wheel:
 
 ```bash
 python -m build
-```
-
-Test the package on TestPyPI first:
-
-```bash
-python -m twine upload --repository testpypi dist/*
-```
-
-Then install it from TestPyPI to verify the published artifact:
-
-```bash
-python -m pip install --index-url https://test.pypi.org/simple/ mkdocs-h5p
 ```
 
 Publish to PyPI:

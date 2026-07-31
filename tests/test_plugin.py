@@ -151,7 +151,8 @@ def test_can_render_h5p_reference_as_iframe(tmp_path: Path) -> None:
     assert "assets/h5p/quiz-" in output
     assert "mkdocs-h5p.html" in output
     assert "h5p-standalone@3.8.0/dist/main.bundle.js" not in output
-    assert "<script" not in output
+    assert "event.data.type !== 'iframeResize'" in output
+    assert "iframes[i].style.height" in output
 
     player_file = generated_player_files(tmp_path)[0]
     player_html = player_file.read_text(encoding="utf-8")
@@ -161,6 +162,8 @@ def test_can_render_h5p_reference_as_iframe(tmp_path: Path) -> None:
     assert '"downloadUrl":"' in player_html
     assert ".h5p" in player_html
     assert "new H5P(element, options)" in player_html
+    assert "new ResizeObserver(postHeight)" in player_html
+    assert "type: 'iframeResize'" in player_html
     assert len(generated_download_files(tmp_path)) == 1
     assert generated_download_files(tmp_path)[0].read_bytes() == (page_dir / "quiz.h5p").read_bytes()
 

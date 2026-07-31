@@ -74,21 +74,34 @@ class H5PPlugin(BasePlugin):
             return markdown
 
         players: list[dict[str, Any]] = []
+        iframe_rendered = False
 
         def replace_image(match: re.Match[str]) -> str:
+            nonlocal iframe_rendered
             title = match.group("title").strip() or None
-            return self._render_player(match.group("path"), page, title, players)
+            rendered = self._render_player(match.group("path"), page, title, players)
+            iframe_rendered = iframe_rendered or self.config["render_mode"] == "iframe"
+            return rendered
 
         def replace_shortcode(match: re.Match[str]) -> str:
-            return self._render_player(match.group("path"), page, None, players)
+            nonlocal iframe_rendered
+            rendered = self._render_player(match.group("path"), page, None, players)
+            iframe_rendered = iframe_rendered or self.config["render_mode"] == "iframe"
+            return rendered
 
         markdown = IMAGE_PATTERN.sub(replace_image, markdown)
         markdown = SHORTCODE_PATTERN.sub(replace_shortcode, markdown)
 
-        if not players:
+        extras = []
+        if players:
+            extras.append(self._render_inline_loader(players, page))
+        if iframe_rendered:
+            extras.append(self._render_iframe_resize_listener())
+
+        if not extras:
             return markdown
 
-        return f"{markdown}\n\n{self._render_inline_loader(players, page)}"
+        return f"{markdown}\n\n" + "\n".join(extras)
 
     def _render_player(
         self,
@@ -255,6 +268,24 @@ class H5PPlugin(BasePlugin):
             "</script>"
         )
 
+    def _render_iframe_resize_listener(self) -> str:
+        return (
+            "<script>\n"
+            "(function(){\n"
+            "  window.addEventListener('message', function(event){\n"
+            "    if (!event.data || event.data.type !== 'iframeResize') return;\n"
+            "    var iframes = document.getElementsByClassName('mkdocs-h5p');\n"
+            "    for (var i = 0; i < iframes.length; i += 1) {\n"
+            "      if (iframes[i].contentWindow === event.source) {\n"
+            "        iframes[i].style.height = event.data.height + 'px';\n"
+            "        break;\n"
+            "      }\n"
+            "    }\n"
+            "  });\n"
+            "}());\n"
+            "</script>"
+        )
+
     def _render_standalone_html(
         self,
         *,
@@ -270,7 +301,7 @@ class H5PPlugin(BasePlugin):
             '  <meta charset="utf-8">\n'
             '  <meta name="viewport" content="width=device-width, initial-scale=1">\n'
             "</head>\n"
-            "<body>\n"
+            "<body style='margin:0;'>\n"
             f'  <div id="{html.escape(player_id)}" class="mkdocs-h5p"></div>\n'
             f'  <script src="{html.escape(main_bundle)}" charset="UTF-8"></script>\n'
             "  <script>\n"
@@ -294,6 +325,16 @@ class H5PPlugin(BasePlugin):
             "    }\n"
             "    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init);\n"
             "    else init();\n"
+            "  }());\n"
+            "  </script>\n"
+            "  <script>\n"
+            "  (function(){\n"
+            "    function postHeight(){ console.log('postHeight')\n"
+            "      if (document.fullscreenElement) return;\n"
+            "      window.parent.postMessage({ type: 'iframeResize', height: document.body.scrollHeight }, '*');\n"
+            "    }\n"
+            "    var ro = new ResizeObserver(postHeight);\n"
+            "    ro.observe(document.body);\n"
             "  }());\n"
             "  </script>\n"
             "</body>\n"
